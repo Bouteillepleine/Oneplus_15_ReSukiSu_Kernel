@@ -685,7 +685,7 @@ jobs:
             fi
           done
 
-      - name: Fix Modules for Android 16
+      - name: Modules
         if: ${{ contains(github.event.inputs.FILE, 'android16-6.12') }}
         run: |
           echo "🔧 Disabling module name protection for kernel 6.12"
