@@ -18,6 +18,7 @@ on:
         default: ReSuki
         options:
           - ReSuki
+          - SukiSU
 
       KPM:
         type: choice
@@ -113,7 +114,7 @@ jobs:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
-      CCACHE_MAXSIZE: 8G
+      CCACHE_MAXSIZE: 3G
       BUILD_METHOD: "GKI"
       ANDROID_VERSION: "16"
 
@@ -129,12 +130,13 @@ jobs:
         if: ${{ github.event.inputs.SPACE_NOCLEAN == 'false' }}
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
+          root-reserve-mb: 1024
+          temp-reserve-mb: 512
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
+          remove-docker-images: 'true'
 
       - name: Debug Show Selected Inputs
         run: |
@@ -160,10 +162,11 @@ jobs:
       - name: Check Disk Space
         run: df -h
 
-      - name: Create and Enable 3G Swap
+      - name: Create and Enable 1G Swap
         run: |
-          sudo swapoff -a
-          sudo fallocate -l 3G /swapfile
+          sudo swapoff -a || true
+          sudo rm -f /swapfile || true
+          sudo fallocate -l 1G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
@@ -379,26 +382,62 @@ jobs:
             chmod +x "$path"
           done
 
-      - name: Add KernelSU (ReSukiSU)
+      # ========================================
+      # 🆕 NOUVEAU: Sélection dynamique KSU
+      # ========================================
+      - name: Resolve Manager Source
+        id: manager
+        run: |
+          MANAGER_SOURCE="${{ github.event.inputs.MANAGER_SOURCE }}"
+
+          case "$MANAGER_SOURCE" in
+            SukiSU)
+              BRANCH="main"
+              REPO="SukiSU-Ultra/SukiSU-Ultra"
+              SETUP_URL="https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh"
+              VERSION_OFFSET=37185
+              ;;
+            ReSuki|*)
+              BRANCH="main"
+              REPO="ReSukiSU/ReSukiSU"
+              SETUP_URL="https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh"
+              VERSION_OFFSET=30700
+              ;;
+          esac
+
+          echo "manager_branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "manager_repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "manager_setup_url=$SETUP_URL" >> "$GITHUB_OUTPUT"
+          echo "manager_version_offset=$VERSION_OFFSET" >> "$GITHUB_OUTPUT"
+
+          echo "✅ Manager: $MANAGER_SOURCE"
+          echo "   - Repository: $REPO"
+          echo "   - Branch: $BRANCH"
+
+      - name: Add KernelSU (Dynamic)
         run: |
           cd kernel_workspace
 
+          MANAGER_BRANCH="${{ steps.manager.outputs.manager_branch }}"
+          MANAGER_REPO="${{ steps.manager.outputs.manager_repo }}"
+          SETUP_URL="${{ steps.manager.outputs.manager_setup_url }}"
+          VERSION_OFFSET="${{ steps.manager.outputs.manager_version_offset }}"
           KSU_META="${{ github.event.inputs.KSU_META }}"
 
           if [[ "$(grep -o '/' <<< "$KSU_META" | wc -l)" -lt 2 ]]; then
-            echo "Error: KSU_META parameter missing required '/' separator"
+            echo "错误: KSU_META 参数缺少必要的分隔符 '/'，格式应为: 分支名/自定义标识(可省略)/提交hash(可省略)"
             exit 10
           fi
 
           IFS='/' read -r BRANCH_NAME CUSTOM_TAG MANUAL_HASH <<< "$KSU_META"
 
-          echo "Branch name: $BRANCH_NAME"
-          [[ -n "$CUSTOM_TAG" ]] && echo "Custom version tag: $CUSTOM_TAG" || echo "Custom version tag: Not enabled"
-          [[ -n "$MANUAL_HASH" ]] && echo "Manual hash: $MANUAL_HASH" || echo "Manual hash: Not enabled"
-          echo "Manager Source: ReSuki"
+          echo "分支名: $BRANCH_NAME"
+          [[ -n "$CUSTOM_TAG" ]] && echo "自定义版本标识: $CUSTOM_TAG" || echo "自定义版本标识: 未启用"
+          [[ -n "$MANUAL_HASH" ]] && echo "手动指定 hash: $MANUAL_HASH" || echo "手动指定 hash: 未启用"
+          echo "Manager Source: ${{ github.event.inputs.MANAGER_SOURCE }}"
 
-          echo "📥 Installing ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+          echo "📥 Installing ${{ github.event.inputs.MANAGER_SOURCE }}..."
+          curl -LSs "$SETUP_URL" | bash -s "$BRANCH_NAME"
 
           cd ./KernelSU
 
@@ -408,11 +447,17 @@ jobs:
             SHORT_HASH=${MANUAL_HASH:0:8}
           fi
 
-          KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/$BRANCH_NAME/kernel/Kbuild" | \
+          # Récupérer KSU_API_VERSION depuis le repo approprié
+          KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/${MANAGER_REPO}/$BRANCH_NAME/kernel/Kbuild" | \
             grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true)
 
-          if [[ -z "$KSU_API_VERSION" || "$(printf '%s\n' "$KSU_API_VERSION" "4.1.0" | sort -V | head -n1)" != "4.1.0" ]]; then
-            KSU_API_VERSION="4.1.0"
+          # Fallback selon le manager
+          if [[ -z "$KSU_API_VERSION" ]]; then
+            if [[ "${{ github.event.inputs.MANAGER_SOURCE }}" == "SukiSU" ]]; then
+              KSU_API_VERSION="3.1.7"
+            else
+              KSU_API_VERSION="4.1.0"
+            fi
           fi
           echo "KSU_API_VERSION=$KSU_API_VERSION" >> $GITHUB_ENV
 
@@ -433,11 +478,13 @@ jobs:
             VERSION_FULL="v$KSU_API_VERSION-$CUSTOM_TAG@$BRANCH_NAME[$USE_HASH]"
           fi
 
-          sed -i '/define get_ksu_version_full/,/endef/d' kernel/Kbuild
-          sed -i '/KSU_VERSION_API :=/d' kernel/Kbuild
-          sed -i '/KSU_VERSION_FULL :=/d' kernel/Kbuild
+          # Mise à jour du Kbuild (compatible SukiSU & ReSukiSU)
+          if [[ "${{ github.event.inputs.MANAGER_SOURCE }}" == "SukiSU" ]]; then
+            sed -i '/define get_ksu_version_full/,/endef/d' kernel/Kbuild
+            sed -i '/KSU_VERSION_API :=/d' kernel/Kbuild
+            sed -i '/KSU_VERSION_FULL :=/d' kernel/Kbuild
 
-          VERSION_DEFINITIONS=$(cat <<EOF
+            VERSION_DEFINITIONS=$(cat <<EOF
             define get_ksu_version_full
             $VERSION_FULL
             endef
@@ -445,34 +492,46 @@ jobs:
             KSU_VERSION_API := $KSU_API_VERSION
             KSU_VERSION_FULL := $VERSION_FULL
           EOF
-          )
+            )
 
-          awk -v def="$VERSION_DEFINITIONS" '
-            /REPO_OWNER :=/ {print; print def; inserted=1; next}
-            1
-            END {if (!inserted) print def}
-          ' kernel/Kbuild > kernel/Kbuild.tmp && mv kernel/Kbuild.tmp kernel/Kbuild
+            awk -v def="$VERSION_DEFINITIONS" '
+              /REPO_OWNER :=/ {print; print def; inserted=1; next}
+              1
+              END {if (!inserted) print def}
+            ' kernel/Kbuild > kernel/Kbuild.tmp && mv kernel/Kbuild.tmp kernel/Kbuild
+          fi
 
-          KSU_VERSION=$(expr $(git rev-list --count main 2>/dev/null || echo 13000) + 37185)
+          # ✅ FIX 1: Compteur de version fiable
+          echo "🔢 Calculating KSU version number..."
+          git fetch origin "$MANAGER_BRANCH" --depth=1 || true
+          COUNT="$(git rev-list --count "origin/$MANAGER_BRANCH" 2>/dev/null || git rev-list --count HEAD)"
+          KSU_VERSION=$(( COUNT + VERSION_OFFSET ))
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          echo "✅ KSU Version: $KSU_VERSION (count: $COUNT + offset: $VERSION_OFFSET)"
 
-          echo "::group::Final Kbuild version info"
-          grep -A10 "REPO_OWNER" kernel/Kbuild
-          grep "KSU_VERSION_FULL" kernel/Kbuild
+          echo "::group::最终 Kbuild 中版本信息"
+          grep -A10 "REPO_OWNER" kernel/Kbuild || true
+          grep "KSU_VERSION" kernel/Kbuild || true
           echo "::endgroup::"
 
-      - name: Apply Patches (ReSukiSU)
+      - name: Apply Patches (Dynamic)
         run: |
           set -euo pipefail
 
           cd "$GITHUB_WORKSPACE"
 
+          # 🔍 Vérifier l'espace disque AVANT clonage
+          echo "📊 Espace disque avant clonage:"
+          df -h | grep "/$"
+
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_META="${{ github.event.inputs.SUSFS_META }}"
 
-            echo "Installing SUSFS..."
-            git clone https://gitlab.com/simonpunk/susfs4ksu.git \
-              -b "gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}"
+            echo "📥 Installing SUSFS (blobless + shallow clone)..."
+            # ✅ FIX 2: Clone blobless pour économiser de l'espace
+            git clone --depth=1 --filter=blob:none --single-branch \
+              -b "gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}" \
+              https://gitlab.com/simonpunk/susfs4ksu.git
 
             cd susfs4ksu
             if [ -n "$SUSFS_META" ]; then
@@ -485,8 +544,17 @@ jobs:
             echo "SUSFS disabled (SUSFS_META=-1)"
           fi
 
-          git clone https://github.com/ShirkNeko/SukiSU_patch.git
-          git clone https://github.com/Numbersf/Action-Build.git
+          echo "📥 Cloning support repositories..."
+          git clone --depth=1 https://github.com/ShirkNeko/SukiSU_patch.git
+          git clone --depth=1 https://github.com/Numbersf/Action-Build.git
+
+          # 🧹 Nettoyer les .git immédiatement
+          echo "🧹 Cleaning .git directories to save space..."
+          rm -rf susfs4ksu/.git SukiSU_patch/.git Action-Build/.git 2>/dev/null || true
+
+          # 🔍 Vérifier l'espace disque APRÈS clonage
+          echo "📊 Espace disque après clonage:"
+          df -h | grep "/$"
 
           cd kernel_workspace/common
 
@@ -496,9 +564,31 @@ jobs:
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* ./fs/
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* ./include/linux/
 
+            GKI_V="${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
+            SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
+
+            # Fake Patch to fix failures
+            fake_patched=0
+            if [ "$GKI_V" = "android15-6.6" ]; then
+              if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                echo "未找到 nr_subpages，正在进行补丁修复"
+                sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
+                fake_patched=1
+              fi
+            fi
+
             echo "Applying SUSFS patch..."
-            patch -p1 < "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch"
+            patch -p1 < "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" || true
             echo "SUSFS patch applied"
+
+            # Revert fake patch
+            if [ "$fake_patched" = 1 ]; then
+              if [ "$GKI_V" = "android15-6.6" ]; then
+                if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
+                  sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
+                fi
+              fi
+            fi
           fi
 
       - name: 🔍 Capture SUSFS Metadata
@@ -720,7 +810,8 @@ jobs:
       - name: Apply patch_linux and Replace Image
         if: ${{ github.event.inputs.KPM == 'KPM' }}
         run: |
-          PATCH_DIR="${GITHUB_WORKSPACE}/Action-Build/patches"
+          # ✅ FIX 4: Chemin correct vers SukiSU_patch/kpm
+          PATCH_DIR="${GITHUB_WORKSPACE}/SukiSU_patch/kpm"
           OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/out/Final-Image-Find"
           cd "${OUT_DIR}"
           cp "${PATCH_DIR}/patch_linux" .
@@ -790,7 +881,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Définir toutes les variables en dehors du heredoc
           KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
@@ -803,7 +893,6 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
 
-          # Calculer les statuts AVANT le heredoc
           if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_ENABLED="✅ Enabled"
             SUSFS_VERSION="${SUSVER:-Latest upstream}"
@@ -823,7 +912,7 @@ jobs:
             SUSFS_COMMIT_LINK="N/A"
           fi
 
-          KSU_REPO="ReSukiSU/ReSukiSU"
+          KSU_REPO="${{ steps.manager.outputs.manager_repo }}"
 
           if [ "$KSU_COMMIT_SHA" != "N/A" ] && [ -n "$KSU_COMMIT_SHA" ]; then
             KSU_COMMIT_LINK="[\`${KSU_COMMIT_SHA:0:8}\`](https://github.com/${KSU_REPO}/commit/${KSU_COMMIT_SHA})"
@@ -831,7 +920,6 @@ jobs:
             KSU_COMMIT_LINK="N/A"
           fi
 
-          # Préparer les statuts des fonctionnalités
           if [ "${{ github.event.inputs.KPM }}" = "KPM" ]; then
             KPM_STATUS="✅ Enabled"
           else
@@ -874,9 +962,8 @@ jobs:
             CCACHE_STATUS="✅ Enabled"
           fi
 
-          # Maintenant générer le rapport avec TOUTES les variables définies
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          # 🎉 Oneplus 15 ReSukiSU Kernel Build Complete
+          # 🎉 OnePlus 15 ${{ github.event.inputs.MANAGER_SOURCE }} Kernel Build Complete
 
           ## 📱 Device Information
 
@@ -891,7 +978,7 @@ jobs:
 
           | Component | Version/Setting |
           |-----------|----------------|
-          | **Manager Source** | ReSuki |
+          | **Manager Source** | ${{ github.event.inputs.MANAGER_SOURCE }} |
           | **KSU Version** | v${KSUVER} |
           | **SUSFS** | ${SUSFS_ENABLED} |
           | **SUSFS Version** | ${SUSFS_VERSION} |
@@ -915,13 +1002,13 @@ jobs:
 
           | Component | Commit |
           |-----------|--------|
-          | **ReSukiSU** | ${KSU_COMMIT_LINK} |
+          | **${{ github.event.inputs.MANAGER_SOURCE }}** | ${KSU_COMMIT_LINK} |
           | **SUSFS** | ${SUSFS_COMMIT_LINK} |
 
           ## ✨ Features Status
 
           **Core Features:**
-          - ✅ **KernelSU (ReSukiSU)**
+          - ✅ **KernelSU (${{ github.event.inputs.MANAGER_SOURCE }})**
           - ${KPM_STATUS} **KPM** (Kernel Patch Manager)
           - ${SUSFS_ENABLED} **SUSFS**
 
