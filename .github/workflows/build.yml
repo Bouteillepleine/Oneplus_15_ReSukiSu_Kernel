@@ -35,7 +35,7 @@ on:
 
       DYNAMIC_REPO:
         type: string
-        description: "Dynamic manifest repository owner"
+        description: "Dynamic manifest repository owner (used for AnyKernel3 clone owner)"
         required: true
         default: "Bouteillepleine"
 
@@ -92,7 +92,7 @@ on:
         description: "Pull SUSFS-DEV branch?"
         required: true
         default: false
-      
+
       XUS_FIX:
         type: boolean
         description: "Apply XUS fix patch?"
@@ -113,7 +113,8 @@ on:
 
 jobs:
   build:
-    name: ${{ github.event.inputs.KPM == 'KPM' && '[KPM]' || '' }}${{ github.event.inputs.LSM == 'true' && '[LSM]' || '' }} For ${{ github.event.inputs.FILE }}
+    name: >-
+      ${{ inputs.KPM == 'KPM' && '[KPM] ' || '' }}${{ inputs.LSM && '[LSM] ' || '' }}For ${{ inputs.FILE }}
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
@@ -129,10 +130,10 @@ jobs:
 
       - name: ⏱️ Start Build Timer
         run: |
-          echo "BUILD_START_TIME=$(date +%s)" >> $GITHUB_ENV
+          echo "BUILD_START_TIME=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Maximize Build Space
-        if: ${{ github.event.inputs.SPACE_NOCLEAN == 'false' }}
+        if: ${{ !inputs.SPACE_NOCLEAN }}
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 8192
@@ -145,23 +146,25 @@ jobs:
       - name: Debug Show Selected Inputs
         run: |
           echo "-----------------------"
-          echo "Selected FILE: ${{ github.event.inputs.FILE }}"
-          echo "Selected MANAGER_SOURCE: ${{ github.event.inputs.MANAGER_SOURCE }}"
-          echo "Selected KPM: ${{ github.event.inputs.KPM }}"
-          echo "Custom SUSFS_META: ${{ github.event.inputs.SUSFS_META }}"
-          echo "Custom KSU_META: ${{ github.event.inputs.KSU_META }}"
-          echo "Custom BUILD_TIME: ${{ github.event.inputs.BUILD_TIME }}"
+          echo "Selected FILE: ${{ inputs.FILE }}"
+          echo "Selected MANAGER_SOURCE: ${{ inputs.MANAGER_SOURCE }}"
+          echo "Selected KPM: ${{ inputs.KPM }}"
+          echo "Custom SUSFS_META: ${{ inputs.SUSFS_META }}"
+          echo "Custom KSU_META: ${{ inputs.KSU_META }}"
+          echo "Custom BUILD_TIME: ${{ inputs.BUILD_TIME }}"
           echo -n "BUILD_TIME Unicode: "
-          python3 -c "import unicodedata; print(''.join(f'\033[31mU+{ord(c):04X}\033[0m ' if c.isspace() or unicodedata.category(c)=='Cf' else f'U+{ord(c):04X} ' for c in '''${{ github.event.inputs.BUILD_TIME }}'''))"
-          echo "Custom SUFFIX: ${{ github.event.inputs.SUFFIX }}"
+          python3 -c "import unicodedata; print(''.join(f'\033[31mU+{ord(c):04X}\033[0m ' if c.isspace() or unicodedata.category(c)=='Cf' else f'U+{ord(c):04X} ' for c in '''${{ inputs.BUILD_TIME }}'''))"
+          echo "Custom SUFFIX: ${{ inputs.SUFFIX }}"
           echo -n "SUFFIX Unicode: "
-          python3 -c "import unicodedata; print(''.join(f'\033[31mU+{ord(c):04X}\033[0m ' if c.isspace() or unicodedata.category(c)=='Cf' else f'U+{ord(c):04X} ' for c in '''${{ github.event.inputs.SUFFIX }}'''))"
-          echo "Selected LSM: ${{ github.event.inputs.LSM }}"
-          echo "Selected NETFILTER: ${{ github.event.inputs.NETFILTER }}"
-          echo "Selected BBR_ECN: ${{ github.event.inputs.BBR_ECN }}"
-          echo "Selected SUSFS_DEV: ${{ github.event.inputs.SUSFS_DEV }}"         
-          echo "Selected XUS_FIX: ${{ github.event.inputs.XUS_FIX }}"
-          echo "Selected UNICODE_BYPASS: ${{ github.event.inputs.UNICODE_BYPASS }}"
+          python3 -c "import unicodedata; print(''.join(f'\033[31mU+{ord(c):04X}\033[0m ' if c.isspace() or unicodedata.category(c)=='Cf' else f'U+{ord(c):04X} ' for c in '''${{ inputs.SUFFIX }}'''))"
+          echo "Selected LSM: ${{ inputs.LSM }}"
+          echo "Selected NETFILTER: ${{ inputs.NETFILTER }}"
+          echo "Selected BBR_ECN: ${{ inputs.BBR_ECN }}"
+          echo "Selected SUSFS_DEV: ${{ inputs.SUSFS_DEV }}"
+          echo "Selected XUS_FIX: ${{ inputs.XUS_FIX }}"
+          echo "Selected UNICODE_BYPASS: ${{ inputs.UNICODE_BYPASS }}"
+          echo "Selected SPACE_NOCLEAN: ${{ inputs.SPACE_NOCLEAN }}"
+          echo "Selected BUILD_NOCCACHE: ${{ inputs.BUILD_NOCCACHE }}"
           echo "-----------------------"
 
       - name: Check Disk Space
@@ -177,11 +180,11 @@ jobs:
           free -h
 
       - name: Set Cache Environment
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
+        if: ${{ !inputs.BUILD_NOCCACHE }}
         run: |
-          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
-          mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
-          echo "set: $HOME/.ccache_${{ github.event.inputs.FILE }}"
+          echo "CCACHE_DIR=$HOME/.ccache_${{ inputs.FILE }}" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.ccache_${{ inputs.FILE }}"
+          echo "set: $HOME/.ccache_${{ inputs.FILE }}"
 
       - name: Configure Git
         run: |
@@ -195,21 +198,22 @@ jobs:
           execute_install_scripts: true
 
       - name: Restore Ccache
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
+        if: ${{ !inputs.BUILD_NOCCACHE }}
         uses: actions/cache@v3
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-standard-16
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ inputs.FILE }}-${{ env.BUILD_METHOD }}-standard-16
 
       - name: Initialize Ccache
-        if: ${{ github.event.inputs.BUILD_NOCCACHE == 'false' }}
+        if: ${{ !inputs.BUILD_NOCCACHE }}
         run: |
+          set -euo pipefail
           INIT_FLAG="${{ env.CCACHE_DIR }}/.ccache_initialized"
           if command -v ccache >/dev/null 2>&1; then
             if [ ! -f "$INIT_FLAG" ]; then
               echo "Initializing ccache (${{ env.CCACHE_DIR }})..."
               mkdir -p "${{ env.CCACHE_DIR }}"
-              ccache -M ${{ env.CCACHE_MAXSIZE }}
+              ccache -M "${{ env.CCACHE_MAXSIZE }}"
               touch "$INIT_FLAG"
               echo "✅ ccache initialization complete"
             else
@@ -218,27 +222,40 @@ jobs:
           else
             echo "❌ ccache not installed, skipping"
           fi
-          ccache -s
+          ccache -s || true
 
       - name: Install Repo Tool
         run: |
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
+          set -euo pipefail
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
+          repo --version || true
 
       - name: Initialize Repo and Sync
         env:
-          FILE: ${{ github.event.inputs.FILE }}
+          FILE: ${{ inputs.FILE }}
         run: |
-          mkdir kernel_workspace && cd kernel_workspace
-          FORMATTED_BRANCH="${{ github.event.inputs.FILE }}"
+          set -euo pipefail
+          mkdir -p kernel_workspace
+          cd kernel_workspace
+
+          FORMATTED_BRANCH="${{ inputs.FILE }}"
           repo init -u https://android.googlesource.com/kernel/manifest -b "common-${FORMATTED_BRANCH}" --depth=1 --no-clone-bundle --no-tags
-          REMOTE_BRANCH=$(git ls-remote https://android.googlesource.com/kernel/common ${FORMATTED_BRANCH})
-          DEFAULT_MANIFEST_PATH=.repo/manifests/default.xml
-          if grep -q deprecated <<< $REMOTE_BRANCH; then
-            sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" $DEFAULT_MANIFEST_PATH
+
+          REMOTE_BRANCH="$(git ls-remote https://android.googlesource.com/kernel/common "${FORMATTED_BRANCH}" || true)"
+          if [ -z "$REMOTE_BRANCH" ]; then
+            echo "::error::Branch not found upstream: ${FORMATTED_BRANCH}"
+            exit 21
           fi
-          repo sync -c -j$(nproc) --no-clone-bundle --no-tags --force-sync
+
+          DEFAULT_MANIFEST_PATH=".repo/manifests/default.xml"
+          if grep -q "deprecated" <<< "$REMOTE_BRANCH"; then
+            sed -i "s/\"${FORMATTED_BRANCH}\"/\"deprecated\/${FORMATTED_BRANCH}\"/g" "$DEFAULT_MANIFEST_PATH"
+          fi
+
+          repo sync -c -j"$(nproc)" --no-clone-bundle --no-tags --force-sync
+
           for dir in common; do
             if [ -e "$dir/BUILD.bazel" ]; then
               sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' "$dir/BUILD.bazel"
@@ -248,41 +265,56 @@ jobs:
 
       - name: Kernel Version Handling
         run: |
+          set -euo pipefail
           cd kernel_workspace
+
+          BRANCH=""
           for f in ./common/build.config.constants ./common/build.config.common; do
             if [ -f "$f" ]; then
-              BRANCH=$(grep -m1 '^BRANCH=' "$f" | cut -d= -f2)
+              BRANCH="$(grep -m1 '^BRANCH=' "$f" | cut -d= -f2 || true)"
               [ -n "$BRANCH" ] && break
             fi
           done
-          if [ -n "$BRANCH" ]; then
-            echo "KANDROID_VERSION=${BRANCH%-*}" >> $GITHUB_ENV
-            echo "KERNEL_VERSION=${BRANCH#*-}" >> $GITHUB_ENV
-          else
-            echo "No BRANCH found in build.config files"
-          fi
-          ORIG_VERSION=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)
-          SUBLEVEL_INPUT="${{ github.event.inputs.SUBLEVEL }}"
+
+          ORIG_VERSION="$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)"
+          SUBLEVEL_INPUT="${{ inputs.SUBLEVEL }}"
           if [ -n "$SUBLEVEL_INPUT" ]; then
             echo "Modifying SUBLEVEL to $SUBLEVEL_INPUT"
             sed -i "s/^\(SUBLEVEL[[:space:]]*=[[:space:]]*\).*/\1$SUBLEVEL_INPUT/" ./common/Makefile
           else
             echo "No SUBLEVEL specified, keeping default"
           fi
-          NEW_VERSION=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)
+          NEW_VERSION="$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)"
+
+          if [ -n "$BRANCH" ]; then
+            echo "KANDROID_VERSION=${BRANCH%-*}" >> "$GITHUB_ENV"
+            echo "KERNEL_VERSION=${BRANCH#*-}" >> "$GITHUB_ENV"
+            KV1="$(echo "${BRANCH#*-}" | cut -d. -f1)"
+            KV2="$(echo "${BRANCH#*-}" | tr -d '.')"
+          else
+            echo "::warning::No BRANCH found in build.config files; falling back to Makefile-derived versions."
+            # Fallback: approximate
+            # KANDROID_VERSION not derivable reliably here; keep as env ANDROID_VERSION
+            echo "KANDROID_VERSION=android${{ env.ANDROID_VERSION }}" >> "$GITHUB_ENV"
+            echo "KERNEL_VERSION=$(awk -F. '{print $1"."$2}' <<< "$NEW_VERSION")" >> "$GITHUB_ENV"
+            KV1="$(awk -F. '{print $1}' <<< "$NEW_VERSION")"
+            KV2="$(awk -F. '{print $1$2}' <<< "$NEW_VERSION")"
+          fi
+
           if [ "$ORIG_VERSION" != "$NEW_VERSION" ]; then
             echo "Kernel Version:$ORIG_VERSION->$NEW_VERSION"
-            echo "TKERNEL_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           else
-            echo "Kernel Version:$ORIG_VERSION No changes"
-            echo "TKERNEL_VERSION=$ORIG_VERSION" >> $GITHUB_ENV
+            echo "Kernel Version:$ORIG_VERSION (no changes)"
           fi
-          echo "KV1=$(echo ${BRANCH#*-} | cut -d. -f1)" >> $GITHUB_ENV
-          echo "KV2=$(echo ${BRANCH#*-} | tr -d '.')" >> $GITHUB_ENV
-          echo "KV3=$(echo ${NEW_VERSION} | tr -d '.')" >> $GITHUB_ENV
+
+          echo "TKERNEL_VERSION=$NEW_VERSION" >> "$GITHUB_ENV"
+          echo "KV1=$KV1" >> "$GITHUB_ENV"
+          echo "KV2=$KV2" >> "$GITHUB_ENV"
+          echo "KV3=$(echo "${NEW_VERSION}" | tr -d '.')" >> "$GITHUB_ENV"
 
       - name: 🔍 Detect CPU Architecture
         run: |
+          set -euo pipefail
           cd kernel_workspace
           CPU_ARCH=""
           for f in ./common/build.config.* ./build.config.*; do
@@ -302,22 +334,28 @@ jobs:
           else
             echo "✅ CPU detected: $CPU_ARCH"
           fi
-          echo "CPU=$CPU_ARCH" >> $GITHUB_ENV
-          echo "CPUD=${CPU_ARCH:0:2}" >> $GITHUB_ENV
+          echo "CPU=$CPU_ARCH" >> "$GITHUB_ENV"
+          echo "CPUD=${CPU_ARCH:0:2}" >> "$GITHUB_ENV"
 
       - name: 🔍 Determine Manager Branch
         id: manager
         run: |
-          KSU_META="${{ github.event.inputs.KSU_META }}"
+          set -euo pipefail
+          KSU_META="${{ inputs.KSU_META }}"
           IFS='/' read -r BRANCH_NAME _ _ <<< "$KSU_META"
-          echo "manager_branch=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          if [ -z "${BRANCH_NAME:-}" ]; then
+            echo "::error::KSU_META malformed; expected branch/custom_tag/commit_hash"
+            exit 22
+          fi
+          echo "manager_branch=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
           echo "Manager branch detected: ${BRANCH_NAME}"
 
       - name: Custom Kernel Suffix if set
-        if: ${{ github.event.inputs.SUFFIX != '' }}
+        if: ${{ inputs.SUFFIX != '' }}
         run: |
+          set -euo pipefail
           cd kernel_workspace
-          SUFFIX="${{ github.event.inputs.SUFFIX }}"
+          SUFFIX="${{ inputs.SUFFIX }}"
           KANDROID_VERSION="${{ env.KANDROID_VERSION }}"
           for path in \
             common/scripts/setlocalversion \
@@ -328,22 +366,19 @@ jobs:
             sed -i 's/ -dirty//g' "$path"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
             if grep -q 'KERNELVERSION.*scm_version' "$path"; then
-              echo "Detected NEW setlocalversion format"
               sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${KANDROID_VERSION}-${SUFFIX}\"|" "$path"
             elif grep -q 'echo "\$res"' "$path"; then
-              echo "Detected OLD setlocalversion format"
-              echo "Standard build: injecting suffix via cut/echo"
               tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
             else
-              echo "Unknown format, appending echo manually"
               echo "echo \"\$res-${SUFFIX}\"" >> "$path"
             fi
             chmod +x "$path"
           done
 
       - name: Custom Kernel Random Suffix if empty
-        if: ${{ github.event.inputs.SUFFIX == '' }}
+        if: ${{ inputs.SUFFIX == '' }}
         run: |
+          set -euo pipefail
           cd kernel_workspace
           KANDROID_VERSION="${{ env.KANDROID_VERSION }}"
           RANDOM_DIGIT=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
@@ -358,14 +393,10 @@ jobs:
             sed -i 's/ -dirty//g' "$path"
             sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path"
             if grep -q 'KERNELVERSION.*scm_version' "$path"; then
-              echo "Detected NEW setlocalversion format"
               sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${KANDROID_VERSION}-${RANDOM_SUFFIX}\"|" "$path"
             elif grep -q 'echo "\$res"' "$path"; then
-              echo "Detected OLD setlocalversion format"
-              echo "Standard build: injecting random suffix via cut/echo"
               tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1-2)-${RANDOM_SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path"
             else
-              echo "Unknown format, appending echo manually"
               echo "echo \"\$res-${RANDOM_SUFFIX}\"" >> "$path"
             fi
             chmod +x "$path"
@@ -373,106 +404,123 @@ jobs:
 
       - name: Add ReSukiSU
         run: |
+          set -euo pipefail
           cd kernel_workspace
           MANAGER_BRANCH="${{ steps.manager.outputs.manager_branch }}"
-          KSU_META="${{ github.event.inputs.KSU_META }}"
+          KSU_META="${{ inputs.KSU_META }}"
 
-          # 必须包含两个分隔符（至少三个字段）
-          if [[ "$(grep -o '/' <<< "$KSU_META" | wc -l)" -lt 2 ]]; then
-            echo "错误: KSU_META 参数缺少必要的分隔符 '/'，格式应为: 分支名/自定义标识(可省略)/提交hash(可省略)"
+          echo "::group::🔍 Parsing KSU_META"
+          SLASH_COUNT=$(grep -o '/' <<< "$KSU_META" | wc -l)
+          echo "Detected $SLASH_COUNT separator(s) in KSU_META"
+          if [[ "$SLASH_COUNT" -lt 2 ]]; then
+            echo "::error::KSU_META parameter missing required '/' separator"
+            echo "::error::Format: branch_name/custom_tag(optional)/commit_hash(optional)"
+            echo "::error::Current: $KSU_META"
             exit 10
           fi
-
-          # 解析字段：分支 / 自定义标识 / 手动 hash
           IFS='/' read -r BRANCH_NAME KSU_CUSTOM_TAG MANUAL_HASH <<< "$KSU_META"
+          echo "  - Branch name: $BRANCH_NAME"
+          echo "  - Custom tag: ${KSU_CUSTOM_TAG:-[Not set]}"
+          echo "  - Manual hash: ${MANUAL_HASH:-[Not set]}"
+          echo "  - Manager branch: $MANAGER_BRANCH"
+          echo "::endgroup::"
 
-          echo "分支名: $BRANCH_NAME"
-          [[ -n "$KSU_CUSTOM_TAG" ]] && echo "自定义版本标识: $KSU_CUSTOM_TAG" || echo "自定义版本标识: 未启用"
-          [[ -n "$MANUAL_HASH" ]] && echo "手动指定 hash: $MANUAL_HASH" || echo "手动指定 hash: 未启用"
+          echo "::group::📥 Installing ReSukiSU"
+          curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${MANAGER_BRANCH}/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+          echo "::endgroup::"
 
-          echo "📥 Installing ReSukiSU..."
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${MANAGER_BRANCH}/kernel/setup.sh" | bash -s "$BRANCH_NAME"
-          
+          [ -d "./KernelSU" ] || { echo "::error::KernelSU directory not found after installation"; exit 12; }
           cd ./KernelSU
 
-          if [[ -n "$KSU_CUSTOM_TAG" ]]; then
+          if [[ -n "${KSU_CUSTOM_TAG:-}" ]]; then
             echo "KSU_CUSTOM_TAG=$KSU_CUSTOM_TAG" >> "$GITHUB_ENV"
           fi
-          
-          if [[ -n "$MANUAL_HASH" ]]; then
-            git fetch origin "$BRANCH_NAME" --depth=50
+
+          if [[ -n "${MANUAL_HASH:-}" ]]; then
+            if ! git fetch origin "$BRANCH_NAME" --depth=50; then
+              git fetch origin "$BRANCH_NAME"
+            fi
             git checkout "$MANUAL_HASH"
             SHORT_HASH=${MANUAL_HASH:0:8}
           fi
 
-          # Capture commit info
           GIT_HASH=$(git rev-parse --short HEAD)
           KSU_COMMIT_SHA=$(git rev-parse HEAD)
-          echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
-          echo "GIT_HASH=$GIT_HASH"
+          echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> "$GITHUB_ENV"
 
-          # Get API version
           KSU_API_VERSION=$(curl -fsSL "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/$BRANCH_NAME/kernel/Kbuild" | \
             grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]' || true)
-          
-          if [[ -z "$KSU_API_VERSION" || "$(printf '%s\n' "$KSU_API_VERSION" "4.1.0" | sort -V | head -n1)" != "4.1.0" ]]; then
+          if [[ -z "$KSU_API_VERSION" ]]; then
+            KSU_API_VERSION="4.1.0"
+          elif [[ "$(printf '%s\n' "$KSU_API_VERSION" "4.1.0" | sort -V | head -n1)" != "4.1.0" ]]; then
             KSU_API_VERSION="4.1.0"
           fi
-          echo "KSU_API_VERSION=$KSU_API_VERSION" >> $GITHUB_ENV
+          echo "KSU_API_VERSION=$KSU_API_VERSION" >> "$GITHUB_ENV"
 
-          # Build version string
-          if [[ -n "$MANUAL_HASH" ]]; then
+          if [[ -n "${MANUAL_HASH:-}" ]]; then
             USE_HASH="$SHORT_HASH"
           else
             USE_HASH="$GIT_HASH"
           fi
 
-          if [[ -z "$KSU_CUSTOM_TAG" ]]; then
+          if [[ -z "${KSU_CUSTOM_TAG:-}" ]]; then
             VERSION_FULL="v$KSU_API_VERSION-$USE_HASH@$BRANCH_NAME"
           else
             VERSION_FULL="v$KSU_API_VERSION-$KSU_CUSTOM_TAG@$BRANCH_NAME[$USE_HASH]"
           fi
 
-          # Update Kbuild
-          sed -i '/define get_ksu_version_full/,/endef/d' kernel/Kbuild
-          sed -i '/KSU_VERSION_API :=/d' kernel/Kbuild
-          sed -i '/KSU_VERSION_FULL :=/d' kernel/Kbuild
+          # Find Kbuild
+          KBUILD_FILE=""
+          for possible_path in "kernel/Kbuild" "Kbuild"; do
+            if [ -f "$possible_path" ]; then
+              KBUILD_FILE="$possible_path"
+              break
+            fi
+          done
+          [ -n "$KBUILD_FILE" ] || { echo "::error::Cannot find Kbuild file"; exit 14; }
+
+          cp "$KBUILD_FILE" "${KBUILD_FILE}.backup"
+          sed -i '/define get_ksu_version_full/,/endef/d' "$KBUILD_FILE"
+          sed -i '/KSU_VERSION_API :=/d' "$KBUILD_FILE"
+          sed -i '/KSU_VERSION_FULL :=/d' "$KBUILD_FILE"
 
           VERSION_DEFINITIONS=$(cat <<EOF
-            define get_ksu_version_full
-            $VERSION_FULL
-            endef
-            KSU_VERSION_API := $KSU_API_VERSION
-            KSU_VERSION_FULL := $VERSION_FULL
+          define get_ksu_version_full
+          $VERSION_FULL
+          endef
+          KSU_VERSION_API := $KSU_API_VERSION
+          KSU_VERSION_FULL := $VERSION_FULL
           EOF
-          )
+                    )
 
           awk -v def="$VERSION_DEFINITIONS" '
             /REPO_OWNER :=/ {print; print def; inserted=1; next}
             1
             END {if (!inserted) print def}
-          ' kernel/Kbuild > kernel/Kbuild.tmp && mv kernel/Kbuild.tmp kernel/Kbuild
+          ' "$KBUILD_FILE" > "${KBUILD_FILE}.tmp"
+          mv "${KBUILD_FILE}.tmp" "$KBUILD_FILE"
+          rm -f "${KBUILD_FILE}.backup"
 
-          KSU_VERSION=$(expr $(git rev-list --count "$MANAGER_BRANCH" 2>/dev/null || echo 13000) + 30700)
-          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          COMMIT_COUNT=$(git rev-list --count "$MANAGER_BRANCH" 2>/dev/null || echo "13000")
+          KSU_VERSION=$(expr "$COMMIT_COUNT" + 30700)
+          echo "KSUVER=$KSU_VERSION" >> "$GITHUB_ENV"
 
-          echo "::group::Final Kbuild version info"
-          grep -A10 "REPO_OWNER" kernel/Kbuild
-          grep "KSU_VERSION_FULL" kernel/Kbuild
-          echo "::endgroup::"
+          echo "::notice::✅ ReSukiSU setup completed successfully!"
+          echo "::notice::Version: $VERSION_FULL"
+          echo "::notice::KSU Number: $KSU_VERSION"
 
       - name: Apply Patches ReSukiSU
         env:
-          FILE: ${{ github.event.inputs.FILE }}
+          FILE: ${{ inputs.FILE }}
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
-            SUSFS_META="${{ github.event.inputs.SUSFS_META }}"
+
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            SUSFS_META="${{ inputs.SUSFS_META }}"
             echo "Installing SUSFS..."
             git clone https://gitlab.com/simonpunk/susfs4ksu.git \
-              -b "gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}"
+              -b "gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ inputs.SUSFS_DEV && '-dev' || '' }}"
             cd susfs4ksu
             if [ -n "$SUSFS_META" ]; then
               git checkout "$SUSFS_META"
@@ -489,87 +537,62 @@ jobs:
 
           cd kernel_workspace/common
 
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
-            echo "Copying SUSFS patch set into kernel tree..."
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" ./
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/"* ./fs/
             cp "$GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/"* ./include/linux/
           fi
-         
+
           GKI_V="${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
           SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
 
           if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
-            echo "修复内核版本为5.15.0~5.15.123仅支持旧版C库造成的一些bug"
             cp "$GITHUB_WORKSPACE/Action-Build/patches/fix_5.15.legacy" ./fix_5.15.legacy.patch
             patch -p1 < fix_5.15.legacy.patch
-            echo "fix_5.15_patch完成"
           fi
 
-          if [[ "${{ env.KV2 }}" == "66" && "${{ env.KV3 }}" -le 6630 && "${{ github.event.inputs.SUSFS_META }}" != "-1" ]]; then
+          if [[ "${{ env.KV2 }}" == "66" && "${{ env.KV3 }}" -le 6630 && "${{ inputs.SUSFS_META }}" != "-1" ]]; then
             TRUSTY_EXISTS="false"
-            if grep -q 'common-modules/trusty' "$GITHUB_WORKSPACE/.repo/manifests_fallback/${FILE}.xml" 2>/dev/null; then
+            if grep -q 'common-modules/trusty' "$GITHUB_WORKSPACE/kernel_workspace/.repo/manifests/default.xml" 2>/dev/null; then
               TRUSTY_EXISTS="true"
             fi
-            echo "trusty_exists=$TRUSTY_EXISTS" >> $GITHUB_OUTPUT
             if [[ "$TRUSTY_EXISTS" == "false" ]]; then
-              echo "修复内核版本为6.6.0~6.6.30的机型源码及清单中缺失TrustyOS导致的susfs报错"
-              sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
-              sed -i '/#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+              sed -i 's/-32,12 +32,38/-32,11 +32,37/g' "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" || true
+              sed -i '/#include <trace\/hooks\/fs.h>/d' "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" || true
             fi
           fi
 
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
-            # Fake Patch to fix failures
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
             fake_patched=0
             if [ "$GKI_V" = "android15-6.6" ]; then
               if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
-                echo "未找到 nr_subpages，正在进行补丁修复"
                 sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
                 fake_patched=1
               fi
             fi
-            if [ "$GKI_V" = "android12-5.10" ] || [ "$GKI_V" = "android13-5.15" ] || [ "$GKI_V" = "android14-6.1" ]; then
-              if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
-                echo "未找到 vma_pages，正在进行补丁修复"
-                fake_patched=1
-              fi
-            fi
 
-            echo "Applying SUSFS patch..."
             patch -p1 < "50_add_susfs_in_gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch" || true
-            echo "SUSFS patch applied"
 
-            # Revert fake patches
-            if [ "$fake_patched" = 1 ]; then
-              if [ "$GKI_V" = "android15-6.6" ]; then
-                if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
-                  sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
-                fi
-              fi
-              if [ "$GKI_V" = "android12-5.10" ] || [ "$GKI_V" = "android13-5.15" ] || [ "$GKI_V" = "android14-6.1" ]; then
-                if grep -qxF $'\t\tgoto show_pad;' ./fs/proc/task_mmu.c; then
-                  sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
-                fi
-              fi
+            if [ "$fake_patched" = 1 ] && [ "$GKI_V" = "android15-6.6" ]; then
+              sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c || true
             fi
 
-            if [ "${{ github.event.inputs.XUS_FIX }}" = "true" ]; then
-              echo "Applying XUS fix patch..."
+            if [ "${{ inputs.XUS_FIX }}" = "true" ]; then
               cp "$GITHUB_WORKSPACE/Action-Build/patches/No_5uS.patch" ./
               patch -p1 < No_5uS.patch || true
             fi
           fi
 
       - name: 🔍 Capture SUSFS Metadata
-        if: ${{ github.event.inputs.SUSFS_META != '-1' }}
+        if: ${{ inputs.SUSFS_META != '-1' }}
         run: |
+          set -euo pipefail
           cd "$GITHUB_WORKSPACE/susfs4ksu"
           SUSFS_COMMIT="$(git rev-parse HEAD)"
           SUSFS_SHORT_COMMIT="$(git rev-parse --short HEAD)"
           echo "SUSFS_COMMIT_SHA=${SUSFS_COMMIT}" >> "$GITHUB_ENV"
           echo "SUSFS_SHORT_COMMIT=${SUSFS_SHORT_COMMIT}" >> "$GITHUB_ENV"
-          SUSFS_BRANCH="gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}"
+          SUSFS_BRANCH="gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ inputs.SUSFS_DEV && '-dev' || '' }}"
           echo "SUSFS_BRANCH_NAME=${SUSFS_BRANCH}" >> "$GITHUB_ENV"
           if [ -f "VERSION" ]; then
             SUSFS_VER="$(tr -d '\n' < VERSION)"
@@ -579,14 +602,11 @@ jobs:
             SUSFS_VER="2.0.0+"
           fi
           echo "SUSVER=${SUSFS_VER}" >> "$GITHUB_ENV"
-          echo "✅ SUSFS Metadata captured:"
-          echo "  - Commit: ${SUSFS_COMMIT}"
-          echo "  - Branch: ${SUSFS_BRANCH}"
-          echo "  - Version: ${SUSFS_VER}"
 
       - name: Apply UNICODE_BYPASS
-        if: ${{ github.event.inputs.UNICODE_BYPASS == 'true' }}
+        if: ${{ inputs.UNICODE_BYPASS }}
         run: |
+          set -euo pipefail
           PATCH_DIR="${GITHUB_WORKSPACE}/Action-Build/patches"
           cd kernel_workspace/common
           if [ "${{ env.KV1 }}" -lt 6 ]; then
@@ -596,106 +616,122 @@ jobs:
           fi
 
       - name: Apply LSM_BBG
-        if: ${{ github.event.inputs.LSM == 'true' }}
+        if: ${{ inputs.LSM }}
         run: |
+          set -euo pipefail
           cd kernel_workspace/common
-          echo "Enabling kernel-level baseband protection support..."
-          curl -LSs https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh | bash
+          curl -fsSL https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' ./security/Kconfig
 
       - name: Add Configuration Settings
         run: |
+          set -euo pipefail
           cd kernel_workspace/common
           CONFIG_FILE=./arch/arm64/configs/gki_defconfig
           KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
           CPU="${{ env.CPU }}"
+
           echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
-          if [ "${{ github.event.inputs.KPM }}" = "KPM" ]; then
+          if [ "${{ inputs.KPM }}" = "KPM" ]; then
             echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
           fi
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
-            echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_KSU_MULTI_MANAGER_SUPPORT=y" >> "$CONFIG_FILE"
+
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
+            cat >> "$CONFIG_FILE" <<'EOF'
+            CONFIG_KSU_SUSFS=y
+            CONFIG_KSU_SUSFS_SUS_PATH=y
+            CONFIG_KSU_SUSFS_SUS_MAP=y
+            CONFIG_KSU_SUSFS_SUS_MOUNT=y
+            CONFIG_KSU_SUSFS_SUS_KSTAT=y
+            CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+            CONFIG_KSU_SUSFS_ENABLE_LOG=y
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+            CONFIG_KSU_MULTI_MANAGER_SUPPORT=y
+            EOF
           else
             echo "CONFIG_KSU_SUSFS=n" >> "$CONFIG_FILE"
           fi
-          echo "CONFIG_TMPFS_XATTR=y" >> "$CONFIG_FILE"
-          echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$CONFIG_FILE"
-          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "$CONFIG_FILE"
-          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n" >> "$CONFIG_FILE"
-          echo "CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y" >> "$CONFIG_FILE"
-          echo "CONFIG_OPTIMIZE_INLINING=y" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_KERNEL=n" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_INFO=n" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_INFO_DWARF4=n" >> "$CONFIG_FILE"
-          echo "CONFIG_LOCK_DEBUGGING=n" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_MUTEXES=n" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_SPINLOCK=n" >> "$CONFIG_FILE"
-          echo "CONFIG_DEBUG_ATOMIC_SLEEP=n" >> "$CONFIG_FILE"
-          echo "CONFIG_GDB_SCRIPTS=n" >> "$CONFIG_FILE"
-          if [ "${{ github.event.inputs.BBR_ECN }}" = "true" ]; then
-            echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_CONG_BBR=y" >> "$CONFIG_FILE"
-            echo "CONFIG_NET_SCH_FQ=y" >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_CONG_BIC=n" >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_CONG_HTCP=n" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_ECN=y" >> "$CONFIG_FILE"
-            echo "CONFIG_TCP_ECN=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IPV6_ECN=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_NF_TARGET_ECN=y" >> "$CONFIG_FILE"
+
+          cat >> "$CONFIG_FILE" <<'EOF'
+          CONFIG_TMPFS_XATTR=y
+          CONFIG_TMPFS_POSIX_ACL=y
+          CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+          CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3=n
+          CONFIG_WQ_POWER_EFFICIENT_DEFAULT=y
+          CONFIG_OPTIMIZE_INLINING=y
+          CONFIG_DEBUG_KERNEL=n
+          CONFIG_DEBUG_INFO=n
+          CONFIG_DEBUG_INFO_DWARF4=n
+          CONFIG_LOCK_DEBUGGING=n
+          CONFIG_DEBUG_MUTEXES=n
+          CONFIG_DEBUG_SPINLOCK=n
+          CONFIG_DEBUG_ATOMIC_SLEEP=n
+          CONFIG_GDB_SCRIPTS=n
+          EOF
+
+          if [ "${{ inputs.BBR_ECN }}" = "true" ]; then
+            cat >> "$CONFIG_FILE" <<'EOF'
+            CONFIG_TCP_CONG_ADVANCED=y
+            CONFIG_TCP_CONG_BBR=y
+            CONFIG_NET_SCH_FQ=y
+            CONFIG_TCP_CONG_BIC=n
+            CONFIG_TCP_CONG_WESTWOOD=n
+            CONFIG_TCP_CONG_HTCP=n
+            CONFIG_IP_ECN=y
+            CONFIG_TCP_ECN=y
+            CONFIG_IPV6_ECN=y
+            CONFIG_IP_NF_TARGET_ECN=y
+            EOF
           fi
-          if [ "${{ github.event.inputs.LSM }}" = "true" ]; then
+
+          if [ "${{ inputs.LSM }}" = "true" ]; then
             echo "CONFIG_BBG=y" >> "$CONFIG_FILE"
           fi
-          if [[ "${CPU}" == sm* && "${{ github.event.inputs.NETFILTER }}" == "true" ]]; then
-            echo "CONFIG_BPF_STREAM_PARSER=y" >> "$CONFIG_FILE"
-            echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$CONFIG_FILE"
-            echo "CONFIG_NETFILTER_XT_SET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_MAX=65534" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_BITMAP_IP=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_BITMAP_IPMAC=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_BITMAP_PORT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_IP=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_IPMARK=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_IPPORT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_IPPORTIP=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_IPPORTNET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_IPMAC=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_MAC=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_NETPORTNET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_NET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_NETNET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_NETPORT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_HASH_NETIFACE=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP_SET_LIST_SET=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP6_NF_NAT=y" >> "$CONFIG_FILE"
-            echo "CONFIG_IP6_NF_TARGET_MASQUERADE=y" >> "$CONFIG_FILE"
+
+          if [[ "$CPU" == sm* && "${{ inputs.NETFILTER }}" == "true" ]]; then
+            cat >> "$CONFIG_FILE" <<'EOF'
+            CONFIG_BPF_STREAM_PARSER=y
+            CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+            CONFIG_NETFILTER_XT_SET=y
+            CONFIG_IP_SET=y
+            CONFIG_IP_SET_MAX=65534
+            CONFIG_IP_SET_BITMAP_IP=y
+            CONFIG_IP_SET_BITMAP_IPMAC=y
+            CONFIG_IP_SET_BITMAP_PORT=y
+            CONFIG_IP_SET_HASH_IP=y
+            CONFIG_IP_SET_HASH_IPMARK=y
+            CONFIG_IP_SET_HASH_IPPORT=y
+            CONFIG_IP_SET_HASH_IPPORTIP=y
+            CONFIG_IP_SET_HASH_IPPORTNET=y
+            CONFIG_IP_SET_HASH_IPMAC=y
+            CONFIG_IP_SET_HASH_MAC=y
+            CONFIG_IP_SET_HASH_NETPORTNET=y
+            CONFIG_IP_SET_HASH_NET=y
+            CONFIG_IP_SET_HASH_NETNET=y
+            CONFIG_IP_SET_HASH_NETPORT=y
+            CONFIG_IP_SET_HASH_NETIFACE=y
+            CONFIG_IP_SET_LIST_SET=y
+            CONFIG_IP6_NF_NAT=y
+            CONFIG_IP6_NF_TARGET_MASQUERADE=y
+            EOF
           fi
+
           if [ "$KERNEL_VERSION" = "6.1" ] && [[ "$CPU" == mt* ]]; then
             echo "CONFIG_DEBUG_INFO_BTF=n" >> "$CONFIG_FILE"
           fi
+
           sed -i 's/check_defconfig//' ./build.config.gki
-          echo "✅ Configuration completed with LTO Thin enabled"
 
       - name: Fix IPv6_NAT Error
-        if: ${{ github.event.inputs.NETFILTER == 'true' }}
+        if: ${{ inputs.NETFILTER }}
         run: |
+          set -euo pipefail
           PATCH_DIR="${GITHUB_WORKSPACE}/Action-Build/patches"
           cd kernel_workspace/common
           CPU="${{ env.CPU }}"
           if [[ "${CPU}" == sm* ]]; then
-            echo "Fixing IPv6 NAT for Snapdragon..."
             patch -p1 -F 3 < "${PATCH_DIR}/IPv6_NAT_FIX.patch" || true
           else
             echo "IPv6 NAT not supported, skipping"
@@ -704,64 +740,65 @@ jobs:
       - name: Custom BUILD_TIME
         shell: bash
         run: |
-          INPUT_TIME="${{ github.event.inputs.BUILD_TIME }}"
+          set -euo pipefail
+          INPUT_TIME="${{ inputs.BUILD_TIME }}"
           if [[ -n "$INPUT_TIME" && "$INPUT_TIME" != "F" && "$INPUT_TIME" != "f" ]]; then
             DATESTR="$INPUT_TIME"
-            echo "Using input BUILD_TIME: $DATESTR"
           else
             DATESTR="$(TZ='UTC' date +'%a %b %d %T %Z %Y')"
-            echo "Using UTC time: $DATESTR"
           fi
           echo "KBUILD_BUILD_TIMESTAMP=${DATESTR}" >> "$GITHUB_ENV"
           echo "KBUILD_BUILD_VERSION=1" >> "$GITHUB_ENV"
+
           cd kernel_workspace
           for f in common/scripts/mkcompile_h msm-kernel/scripts/mkcompile_h; do
-            if [ -f "$f" ]; then
-              echo "Patching mkcompile_h"
-              if grep -q 'UTS_VERSION=' "$f"; then
-                perl -pi -e "s{UTS_VERSION=\"\\\$\\(.*?\\)\"}{UTS_VERSION=\"#1 SMP PREEMPT $DATESTR\"}" "$f"
-              else
-                perl -0777 -pi -e "s{cat <<EOF}{cat <<EOF\n#undef UTS_VERSION\n#define UTS_VERSION \"#1 SMP PREEMPT $DATESTR\" } unless /UTS_VERSION/" "$f"
-              fi
+            [ -f "$f" ] || continue
+            if grep -q 'UTS_VERSION=' "$f"; then
+              perl -pi -e "s{UTS_VERSION=\"\\\$\\(.*?\\)\"}{UTS_VERSION=\"#1 SMP PREEMPT $DATESTR\"}" "$f"
+            else
+              perl -0777 -pi -e "s{cat <<EOF}{cat <<EOF\n#undef UTS_VERSION\n#define UTS_VERSION \"#1 SMP PREEMPT $DATESTR\" } unless /UTS_VERSION/" "$f"
             fi
           done
 
       - name: Modules
-        if: ${{ contains(github.event.inputs.FILE, 'android16-6.12') }}
+        if: ${{ contains(inputs.FILE, 'android16-6.12') }}
         run: |
+          set -euo pipefail
           echo "🔧 Disabling module name protection for kernel 6.12"
-          sed -i '0,/protected_module_names_list *= *":gki_aarch64_protected_module_names"/s//check_defconfig = "disabled"/' kernel_workspace/common/BUILD.bazel
+          sed -i '0,/protected_module_names_list *= *":gki_aarch64_protected_module_names"/s//check_defconfig = "disabled"/' kernel_workspace/common/BUILD.bazel || true
 
       - name: Build Kernel
         run: |
+          set -euo pipefail
           cd kernel_workspace
-          set -ex
           if [ -f "build/build.sh" ]; then
-            LTO=none BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
+            LTO=none BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
           else
-            tools/bazel build --config=fast --lto=none //common:kernel_aarch64_dist || exit 1
+            tools/bazel build --config=fast --lto=none //common:kernel_aarch64_dist
           fi
 
       - name: Make AnyKernel3
         run: |
-          git clone https://github.com/Bouteillepleine/AnyKernel3 --depth=1
+          set -euo pipefail
+          OWNER="${{ inputs.DYNAMIC_REPO }}"
+          git clone "https://github.com/${OWNER}/AnyKernel3" --depth=1
           rm -rf ./AnyKernel3/.git
           mkdir -p kernel_workspace/out/Final-Image-Find/
-          image_path=$(find "./kernel_workspace/common/out/" -name "Image" | head -n 1)
+          image_path=$(find "./kernel_workspace/common/out/" -name "Image" | head -n 1 || true)
           if [ -z "$image_path" ]; then
-            image_path=$(find "./kernel_workspace/out/" -name "Image" | head -n 1)
+            image_path=$(find "./kernel_workspace/out/" -name "Image" | head -n 1 || true)
           fi
           if [ -z "$image_path" ] || [ ! -f "$image_path" ]; then
-            echo "❌ Image file not found, build failed" >&2
-            exit 1
+            echo "::error::Image file not found, build failed"
+            exit 31
           fi
-          echo "✅ Image found at: $image_path"
           cp "$image_path" ./AnyKernel3/Image
           cp "$image_path" kernel_workspace/out/Final-Image-Find/Image
 
       - name: Apply patch_linux and Replace Image
-        if: ${{ github.event.inputs.KPM == 'KPM' }}
+        if: ${{ inputs.KPM == 'KPM' }}
         run: |
+          set -euo pipefail
           PATCH_DIR="${GITHUB_WORKSPACE}/Action-Build/patches"
           OUT_DIR="${GITHUB_WORKSPACE}/kernel_workspace/out/Final-Image-Find"
           cd "${OUT_DIR}"
@@ -775,29 +812,25 @@ jobs:
       - name: Set zip Suffix
         id: suffix
         run: |
-          echo "value=${{ github.event.inputs.KPM == 'KPM' && '_KPM' || '' }}${{ github.event.inputs.LSM == 'true' && '_LSM' || '' }}_${{ github.event.inputs.MANAGER_SOURCE }}" >> $GITHUB_OUTPUT
+          echo "value=${{ inputs.KPM == 'KPM' && '_KPM' || '' }}${{ inputs.LSM && '_LSM' || '' }}_${{ inputs.MANAGER_SOURCE }}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload AnyKernel3
-        uses: actions/upload-artifact@v4
-        with:
-          name: AnyKernel3_${{ github.event.inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_OnePlus15_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}
-          path: ./AnyKernel3/*
-
-      - name: 📊 Calculate Build Metrics
+      - name: 📊 Calculate Build Metrics + Make ZIP
         id: metrics
         shell: bash
         run: |
           set -euo pipefail
+
           if [ -n "${BUILD_START_TIME:-}" ]; then
             BUILD_END_TIME=$(date +%s)
             BUILD_DURATION=$((BUILD_END_TIME - BUILD_START_TIME))
             MINUTES=$((BUILD_DURATION / 60))
             SECONDS=$((BUILD_DURATION % 60))
-            echo "BUILD_TIME=${MINUTES}m ${SECONDS}s" >> $GITHUB_ENV
-            echo "BUILD_DURATION_RAW=${BUILD_DURATION}" >> $GITHUB_ENV
+            echo "BUILD_TIME=${MINUTES}m ${SECONDS}s" >> "$GITHUB_ENV"
+            echo "BUILD_DURATION_RAW=${BUILD_DURATION}" >> "$GITHUB_ENV"
           else
-            echo "BUILD_TIME=N/A" >> $GITHUB_ENV
+            echo "BUILD_TIME=N/A" >> "$GITHUB_ENV"
           fi
+
           WARNINGS_COUNT="0"
           for log in kernel_workspace/build.log kernel_workspace/out/build.log kernel_workspace/common/out/build.log; do
             if [ -f "$log" ]; then
@@ -805,26 +838,34 @@ jobs:
               break
             fi
           done
-          echo "WARNINGS_COUNT=${WARNINGS_COUNT}" >> $GITHUB_ENV
+          echo "WARNINGS_COUNT=${WARNINGS_COUNT}" >> "$GITHUB_ENV"
+
           cd AnyKernel3
-          ZIP_NAME="AnyKernel3_${{ github.event.inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_OnePlus15_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}.zip"
-          if [ ! -f "${ZIP_NAME}" ]; then
-            zip -r9 "${ZIP_NAME}" ./* -x "*.git*"
-          fi
+          ZIP_NAME="AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_OnePlus15_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}.zip"
+          zip -r9 "${ZIP_NAME}" ./* -x "*.git*"
+
           ZIP_SHA256=$(sha256sum "${ZIP_NAME}" | awk '{print $1}')
           ZIP_SIZE=$(du -h "${ZIP_NAME}" | awk '{print $1}')
           IMAGE_SHA256=$(sha256sum Image | awk '{print $1}')
           IMAGE_SIZE=$(du -h Image | awk '{print $1}')
-          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "ZIP_SHA256=${ZIP_SHA256}" >> $GITHUB_ENV
-          echo "ZIP_SIZE=${ZIP_SIZE}" >> $GITHUB_ENV
-          echo "IMAGE_SHA256=${IMAGE_SHA256}" >> $GITHUB_ENV
-          echo "IMAGE_SIZE=${IMAGE_SIZE}" >> $GITHUB_ENV
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+          echo "ZIP_SHA256=${ZIP_SHA256}" >> "$GITHUB_ENV"
+          echo "ZIP_SIZE=${ZIP_SIZE}" >> "$GITHUB_ENV"
+          echo "IMAGE_SHA256=${IMAGE_SHA256}" >> "$GITHUB_ENV"
+          echo "IMAGE_SIZE=${IMAGE_SIZE}" >> "$GITHUB_ENV"
+
+      - name: Upload AnyKernel3
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3_${{ inputs.MANAGER_SOURCE }}_${{ env.KSUVER }}_OnePlus15_${{ env.TKERNEL_VERSION }}${{ steps.suffix.outputs.value }}
+          path: ./AnyKernel3/${{ env.ZIP_NAME }}
 
       - name: 📊 Build Summary
         shell: bash
         run: |
           set -euo pipefail
+
           KSU_COMMIT_SHA="${KSU_COMMIT_SHA:-N/A}"
           KSUVER="${KSUVER:-N/A}"
           TKERNEL_VERSION="${TKERNEL_VERSION:-N/A}"
@@ -837,10 +878,10 @@ jobs:
           IMAGE_SHA256="${IMAGE_SHA256:-N/A}"
           IMAGE_SIZE="${IMAGE_SIZE:-N/A}"
 
-          if [ "${{ github.event.inputs.SUSFS_META }}" != "-1" ]; then
+          if [ "${{ inputs.SUSFS_META }}" != "-1" ]; then
             SUSFS_ENABLED="✅ Enabled"
             SUSFS_VERSION="${SUSVER:-Latest upstream}"
-            SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ github.event.inputs.SUSFS_DEV == 'true' && '-dev' || '' }}}"
+            SUSFS_BRANCH_NAME="${SUSFS_BRANCH_NAME:-gki-${{ env.KANDROID_VERSION }}-${{ env.KERNEL_VERSION }}${{ inputs.SUSFS_DEV && '-dev' || '' }}}"
             SUSFS_COMMIT_SHA="${SUSFS_COMMIT_SHA:-Latest}"
             if [ "$SUSFS_COMMIT_SHA" != "Latest" ] && [ "$SUSFS_COMMIT_SHA" != "N/A" ]; then
               SUSFS_COMMIT_LINK="[\`${SUSFS_COMMIT_SHA:0:8}\`](https://gitlab.com/simonpunk/susfs4ksu/-/commit/${SUSFS_COMMIT_SHA})"
@@ -862,32 +903,30 @@ jobs:
             KSU_COMMIT_LINK="N/A"
           fi
 
-          [ "${{ github.event.inputs.KPM }}" = "KPM" ] && KPM_STATUS="✅ Enabled" || KPM_STATUS="❌ Disabled"
-          [ "${{ github.event.inputs.LSM }}" = "true" ] && LSM_STATUS="✅ Enabled" || LSM_STATUS="❌ Disabled"
-          [ "${{ github.event.inputs.BBR_ECN }}" = "true" ] && BBR_ECN_STATUS="✅ Enabled" || BBR_ECN_STATUS="❌ Disabled"
-          [ "${{ github.event.inputs.NETFILTER }}" = "true" ] && NETFILTER_STATUS="✅ Enabled (IPSET & IPv6 NAT)" || NETFILTER_STATUS="❌ Disabled"
-          [ "${{ github.event.inputs.UNICODE_BYPASS }}" = "true" ] && UNICODE_FIX_STATUS="✅ Enabled" || UNICODE_FIX_STATUS="❌ Disabled"
-          [ "${{ github.event.inputs.SUSFS_DEV }}" = "true" ] && SUSFS_DEV_MODE="✅ Yes" || SUSFS_DEV_MODE="❌ No"
-          [ "${{ github.event.inputs.BUILD_NOCCACHE }}" = "true" ] && CCACHE_STATUS="❌ Disabled" || CCACHE_STATUS="✅ Enabled"          
-          [ "${{ github.event.inputs.XUS_FIX }}" = "true" ] && XUS_FIX_STATUS="✅ Applied" || XUS_FIX_STATUS="❌ Not applied"
+          [ "${{ inputs.KPM }}" = "KPM" ] && KPM_STATUS="✅ Enabled" || KPM_STATUS="❌ Disabled"
+          [ "${{ inputs.LSM }}" = "true" ] && LSM_STATUS="✅ Enabled" || LSM_STATUS="❌ Disabled"
+          [ "${{ inputs.BBR_ECN }}" = "true" ] && BBR_ECN_STATUS="✅ Enabled" || BBR_ECN_STATUS="❌ Disabled"
+          [ "${{ inputs.NETFILTER }}" = "true" ] && NETFILTER_STATUS="✅ Enabled (IPSET & IPv6 NAT)" || NETFILTER_STATUS="❌ Disabled"
+          [ "${{ inputs.UNICODE_BYPASS }}" = "true" ] && UNICODE_FIX_STATUS="✅ Enabled" || UNICODE_FIX_STATUS="❌ Disabled"
+          [ "${{ inputs.SUSFS_DEV }}" = "true" ] && SUSFS_DEV_MODE="✅ Yes" || SUSFS_DEV_MODE="❌ No"
+          [ "${{ inputs.BUILD_NOCCACHE }}" = "true" ] && CCACHE_STATUS="❌ Disabled" || CCACHE_STATUS="✅ Enabled"
+          [ "${{ inputs.XUS_FIX }}" = "true" ] && XUS_FIX_STATUS="✅ Applied" || XUS_FIX_STATUS="❌ Not applied"
 
           cat >> "$GITHUB_STEP_SUMMARY" <<EOF
-          # 🎉 Oneplus 15 ReSukiSU Kernel Build Complete
+          # 🎉 OnePlus 15 ReSukiSU Kernel Build Complete
 
           ## 📱 Device Information
-
           | Property | Value |
           |----------|-------|
           | **Device** | OnePlus 15 |
           | **Android Version** | ${KANDROID_VERSION} |
           | **Kernel Version** | ${TKERNEL_VERSION} |
-          | **Configuration** | ${{ github.event.inputs.FILE }} |
+          | **Configuration** | ${{ inputs.FILE }} |
 
           ## 🔧 Build Configuration
-
           | Component | Version/Setting |
           |-----------|----------------|
-          | **Manager Source** | ReSuki |
+          | **Manager Source** | ${{ inputs.MANAGER_SOURCE }} |
           | **KSU Version** | v${KSUVER} |
           | **SUSFS** | ${SUSFS_ENABLED} |
           | **SUSFS Version** | ${SUSFS_VERSION} |
@@ -898,7 +937,6 @@ jobs:
           | **Warnings** | ${WARNINGS_COUNT} |
 
           ## 📦 Build Output
-
           | File | Details |
           |------|---------|
           | **ZIP Name** | \`${ZIP_NAME}\` |
@@ -908,55 +946,32 @@ jobs:
           | **Image SHA256** | \`${IMAGE_SHA256}\` |
 
           ## 🔗 Source Commits
-
           | Component | Commit |
           |-----------|--------|
           | **ReSukiSU** | ${KSU_COMMIT_LINK} |
           | **SUSFS** | ${SUSFS_COMMIT_LINK} |
 
           ## ✨ Features Status
-
-          **Core Features:**
-          - ✅ **KernelSU (ReSukiSU)**
-          - ${KPM_STATUS} **KPM** (Kernel Patch Manager)
+          - ${KPM_STATUS} **KPM**
           - ${SUSFS_ENABLED} **SUSFS**
-
-          **Network Optimizations:**
-          - ${BBR_ECN_STATUS} **BBR & ECN** (TCP Congestion Control)
+          - ${BBR_ECN_STATUS} **BBR & ECN**
           - ${NETFILTER_STATUS} **NETFILTER**
-
-          **Performance & Storage:**
-          - ${ZRAM_STATUS} **ZRAM**
-
-          **Security & Fixes:**
-          - ${LSM_STATUS} **LSM** (Baseband Guard)
+          - ${LSM_STATUS} **LSM (Baseband Guard)**
           - ${UNICODE_FIX_STATUS} **Unicode Bypass Fix**
           - ${XUS_FIX_STATUS} **XUS Fix**
-
-          ---
-
-          **Build completed successfully!** 🚀
           EOF
 
       - name: 📊 Post-build Disk Check
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
           echo "::group::💾 Disk Usage Analysis"
-          echo "=== Root Filesystem ==="
           df -h /
-          echo ""
-          echo "=== Build Directory ==="
-          du -sh kernel_workspace 2>/dev/null || echo "Build directory not found"
-          echo ""
-          echo "=== Largest Directories (Top 10) ==="
-          du -h kernel_workspace 2>/dev/null | sort -rh | head -10 || echo "Cannot analyze"
-          echo ""
-          echo "=== Ccache Statistics ==="
-          if [ "${{ github.event.inputs.BUILD_NOCCACHE }}" != "true" ] && command -v ccache >/dev/null 2>&1; then
-            ccache -s
-          else
-            echo "Ccache disabled or not available"
+          du -sh kernel_workspace 2>/dev/null || true
+          du -h kernel_workspace 2>/dev/null | sort -rh | head -10 || true
+          if [ "${{ inputs.BUILD_NOCCACHE }}" != "true" ] && command -v ccache >/dev/null 2>&1; then
+            ccache -s || true
           fi
           echo "::endgroup::"
 
@@ -966,40 +981,22 @@ jobs:
         run: |
           set -euo pipefail
           echo "::group::🧹 Cleanup Operations"
+
           safe_remove() {
             local path="$1"
             if [ -e "$path" ]; then
-              echo "🗑️  Removing: $path"
-              sudo rm -rf "$path" 2>/dev/null || {
-                echo "⚠️  Warning: Failed to remove $path"
-                return 1
-              }
-              echo "✅ Removed successfully"
-            else
-              echo "ℹ️  Path does not exist: $path"
+              echo "Removing: $path"
+              sudo rm -rf "$path" 2>/dev/null || rm -rf "$path" || true
             fi
           }
-          if [ "${{ github.event.inputs.SPACE_NOCLEAN }}" != "true" ]; then
-            echo "=== Cleaning Build Outputs ==="
-            safe_remove "kernel_workspace/common/out"
-            safe_remove "kernel_workspace/out"
-            echo ""
-            echo "=== Cleaning Repository Cache ==="
-            safe_remove "kernel_workspace/.repo"
-            echo ""
-            echo "=== Cleaning Temporary Files ==="
-            safe_remove "/tmp/*"
-            if [ "${{ github.event.inputs.BUILD_NOCCACHE }}" = "true" ]; then
-              echo ""
-              echo "=== Cleaning Ccache ==="
-              safe_remove "$HOME/.ccache_${{ github.event.inputs.FILE }}"
-            fi
-          else
-            echo "⏭️  Space cleanup disabled (SPACE_NOCLEAN=true)"
-          fi
-          echo ""
-          echo "=== Final Disk Status ==="
-          df -h /
-          echo ""
-          echo "✨ Cleanup completed!"
+
+          # Nettoyage “soft” : garde ccache si activé
+          safe_remove "$GITHUB_WORKSPACE/kernel_workspace/.repo"
+          safe_remove "$GITHUB_WORKSPACE/kernel_workspace/common/out"
+          safe_remove "$GITHUB_WORKSPACE/kernel_workspace/out"
+          safe_remove "$GITHUB_WORKSPACE/susfs4ksu"
+          safe_remove "$GITHUB_WORKSPACE/SukiSU_patch"
+          safe_remove "$GITHUB_WORKSPACE/Action-Build"
+
+          # AnyKernel3 contient l’artefact ZIP, donc on le garde
           echo "::endgroup::"
