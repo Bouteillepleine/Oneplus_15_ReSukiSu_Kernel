@@ -6,7 +6,7 @@ on:
         type: choice
         description: "Config file"
         required: true
-        default: oneplus_15r_aosp
+        default: oneplus_15_aosp
         options:          
           - oneplus_ace_6t_aosp          
           - oneplus_15r_aosp         
