@@ -379,6 +379,22 @@ jobs:
             chmod +x "$path"
           done
 
+      - name: Resolve Manager Source
+        id: manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANAGER_SOURCE="${{ github.event.inputs.MANAGER_SOURCE }}"
+
+          case "$MANAGER_SOURCE" in
+            ReSuki|*)
+              MANAGER_BRANCH="main"
+              ;;
+          esac
+
+          echo "manager_branch=$MANAGER_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Manager branch resolved: $MANAGER_BRANCH"
+
       - name: Add ReSukiSU
         shell: bash
         run: |
@@ -387,6 +403,7 @@ jobs:
 
           KSU_META="${{ github.event.inputs.KSU_META }}"
           MANAGER_BRANCH="${{ steps.manager.outputs.manager_branch }}"
+          : "${MANAGER_BRANCH:=main}"
 
           echo "::group::🔍 Parsing KSU_META"
           if [[ "$(grep -o '/' <<< "$KSU_META" | wc -l)" -lt 2 ]]; then
@@ -404,7 +421,9 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::📥 Installing ReSukiSU"
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${MANAGER_BRANCH}/kernel/setup.sh" | bash -s "$BRANCH_NAME"
+          SETUP_URL="https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/${MANAGER_BRANCH}/kernel/setup.sh"
+          echo "Setup URL: $SETUP_URL"
+          curl -fLSs "$SETUP_URL" | bash -s "$BRANCH_NAME"
           echo "::endgroup::"
 
           cd ./KernelSU
@@ -461,12 +480,10 @@ jobs:
 
           cp "$KBUILD_PATH" "${KBUILD_PATH}.backup"
 
-          # Remove old definitions (if present)
           sed -i '/define get_ksu_version_full/,/endef/d' "$KBUILD_PATH"
           sed -i '/KSU_VERSION_API :=/d' "$KBUILD_PATH"
           sed -i '/KSU_VERSION_FULL :=/d' "$KBUILD_PATH"
 
-          # Indentation-proof construction (no heredoc)
           VERSION_DEFINITIONS="$(printf '%s\n' \
           "define get_ksu_version_full" \
           "${VERSION_FULL}" \
@@ -475,7 +492,6 @@ jobs:
           "KSU_VERSION_FULL := ${VERSION_FULL}"
           )"
 
-          # Insert after REPO_OWNER if present, else append to end
           awk -v def="$VERSION_DEFINITIONS" '
             /REPO_OWNER :=/ {print; print def; inserted=1; next}
             1
@@ -494,7 +510,6 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Final Kbuild version info"
-          # Non-fatal greps (important under bash -e)
           if grep -q "REPO_OWNER :=" "$KBUILD_PATH"; then
             grep -A10 "REPO_OWNER :=" "$KBUILD_PATH"
           else
